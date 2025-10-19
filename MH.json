@@ -1,0 +1,426 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * 1"
+            }
+          ]
+        }
+      },
+      "id": "fb6b9574-ebad-4757-9ca6-dadd3b9a3767",
+      "name": "Weekly Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        -2928,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1_6rNEHrUF7kxsM74g1ebo6N4Z2w7ipYEz5VHEI6xgh8",
+          "mode": "list",
+          "cachedResultName": "transaction",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1_6rNEHrUF7kxsM74g1ebo6N4Z2w7ipYEz5VHEI6xgh8/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1734829125,
+          "mode": "list",
+          "cachedResultName": "Transactions",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1_6rNEHrUF7kxsM74g1ebo6N4Z2w7ipYEz5VHEI6xgh8/edit#gid=1734829125"
+        },
+        "options": {}
+      },
+      "id": "2706a714-56e2-4b2a-9f63-aa0c3084bb8a",
+      "name": "Fetch Transactions",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [
+        -2672,
+        208
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "33Fdr6oFUbpTFL8x",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filter last 7 days transactions and group by user\nconst now = new Date();\nconst sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);\nconst rows = items.map(i => i.json);\nconst grouped = {};\nfor (const row of rows) {\n  if (row.id === 'id' || !row.date) continue;\n  const txDate = new Date(row.date);\n  if (txDate < sevenDaysAgo) continue;\n  const uid = row.user_id || 'default';\n  if (!grouped[uid]) {\n    grouped[uid] = { user_id: uid, transactions: [], period_start: sevenDaysAgo.toISOString().split('T')[0], period_end: now.toISOString().split('T')[0] };\n  }\n  grouped[uid].transactions.push({ id: row.id, date: row.date, amount: parseFloat(row.amount) || 0, category: row.category || 'Unknown', description: row.description || '' });\n}\nreturn Object.values(grouped).filter(u => u.transactions.length > 0).map(u => ({ json: u }));"
+      },
+      "id": "33a45214-c24b-4b0d-a8d8-8f655ffb1fae",
+      "name": "Group by User & Filter",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2496,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "17OT7RY0Iw2x31XqUzK2m-tRycmPKKhP5gKjCdodD0-Q",
+          "mode": "list",
+          "cachedResultName": "user",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/17OT7RY0Iw2x31XqUzK2m-tRycmPKKhP5gKjCdodD0-Q/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1796639315,
+          "mode": "list",
+          "cachedResultName": "Users",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/17OT7RY0Iw2x31XqUzK2m-tRycmPKKhP5gKjCdodD0-Q/edit#gid=1796639315"
+        },
+        "options": {}
+      },
+      "id": "cfb1d022-8560-4076-9c30-770af96f7532",
+      "name": "Fetch User Profiles",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [
+        -2672,
+        416
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "33Fdr6oFUbpTFL8x",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get data from the two input branches\nconst groupedTransactions = $input.all(0);\nconst profiles = $input.all(1);\n\nconst mergedItems = [];\n\n// Create a quick lookup map for user profiles\nconst profileMap = new Map(profiles.map(p => [p.json.user_id, p.json]));\n\n// Loop through each user's grouped transactions\nfor (const item of groupedTransactions) {\n  const userGroup = item.json;\n  const userProfile = profileMap.get(userGroup.user_id) || {};\n\n  mergedItems.push({\n    json: {\n      ...userGroup, // This includes user_id, transactions array, period_start, period_end\n      name: userProfile.name || 'Unknown User',\n      monthly_income_estimate: userProfile.income || 0,\n      preferred_contact: userProfile.preferred_contact || '' // Make sure to fetch this from your sheet\n    }\n  });\n}\n\nreturn mergedItems;"
+      },
+      "id": "355b8e4d-ac33-47d6-8172-08d6df557171",
+      "name": "Merge Profile Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2288,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calculate key metrics\nconst data = $input.first().json;\nconst tx = data.transactions;\nlet totalIncome = 0;\nlet totalSpent = 0;\nconst categories = {};\nfor (const t of tx) {\n  const amt = parseFloat(t.amount);\n  if (amt >= 0) totalIncome += amt; else { totalSpent += Math.abs(amt); categories[t.category || 'Other'] = (categories[t.category || 'Other'] || 0) + Math.abs(amt); }\n}\nconst net = totalIncome - totalSpent;\nconst rate = totalIncome > 0 ? (net / totalIncome) : 0;\nconst topCats = Object.entries(categories).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([c, a]) => ({ category: c, amount: a }));\nconst risk = { overspending: totalSpent > (data.monthly_income_estimate / 4), lowSavings: rate < 0.05, negativeCashflow: net < 0 };\nreturn [{ json: { ...data, metrics: { totalIncome, totalSpent, netCashflow: net, savingsRate: (rate * 100).toFixed(1), topCategories: topCats }, risk } }];"
+      },
+      "id": "33946426-ef2d-4d28-8de7-06c33b208b1a",
+      "name": "Calculate Metrics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2160,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Gemini output\nconst user = $input.first().json;\nlet ai;\ntry { ai = JSON.parse($input.last().json.text); } catch(e) { ai = { summary:'Error parsing AI data', insights:['Check data'], action:'Review expenses', risk_flag:false, alert_message:'', explanation:'Could not process AI response.' }; }\nreturn [{ json: { ...user, ai_insights: ai, timestamp: new Date().toISOString() } }];"
+      },
+      "id": "4d86db83-9515-4d19-89c6-321af44b4725",
+      "name": "Parse Gemini Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1968,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.risk.overspending || $json.risk.lowSavings || $json.risk.negativeCashflow || $json.ai_insights.risk_flag }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "8d909d0f-a55d-4dfb-b49f-ae1ef7c8cb97",
+      "name": "Check Risk",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        -1808,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "=6027583888",
+        "text": "={{ $json.content.parts[0].text }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "78aa3e33-190f-4811-9d70-9b1074376d8d",
+      "name": "Send Alert (Telegram)",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [
+        -1520,
+        192
+      ],
+      "webhookId": "af2fbc45-bf62-4f83-badc-0216494eb8bd",
+      "credentials": {
+        "telegramApi": {
+          "id": "C31TBIsrUAX9oBJH",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "=6027583888",
+        "text": "={{ $json.content.parts[0].text }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "b2a7baa1-109d-4306-9982-c29618fef3c9",
+      "name": "Send Normal Update (Telegram)",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [
+        -1520,
+        368
+      ],
+      "webhookId": "dca31340-6953-46d6-8f38-d12dbabbd7ac",
+      "credentials": {
+        "telegramApi": {
+          "id": "C31TBIsrUAX9oBJH",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-pro-latest",
+          "mode": "list",
+          "cachedResultName": "models/gemini-pro-latest"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=📈 *Your Weekly Financial Summary*\n\nHello {{ $json.name }}! Here is your financial report for the week of {{ $json.period_start }} to {{ $json.period_end }}.\n\n*Summary from AI:*\n_{{ $json.ai_insights.summary }}_\n\n---\n*Key Metrics:*\n* **Total Spent:** ${{ $json.metrics.totalSpent.toFixed(2) }}\n* **Net Cashflow:** ${{ $json.metrics.netCashflow.toFixed(2) }}\n* **Savings Rate:** {{ $json.metrics.savingsRate }}%\n\n*AI Recommended Action:*\n* {{ $json.ai_insights.action }}\n\nKeep up the great work!"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1,
+      "position": [
+        -2288,
+        112
+      ],
+      "id": "71d06038-87a7-412f-9523-32723011e699",
+      "name": "Message a model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "L7timFV1CXlF1hlc",
+          "name": "Google Gemini(PaLM) Api account 6"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "siddulingampellli460@gmail.comm",
+        "subject": "AI financial  Agent Metrics ",
+        "message": "={{ $json.result.text }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -1520,
+        16
+      ],
+      "id": "8cc755bb-ff65-472e-b9ac-bda7743bca37",
+      "name": "Send a message",
+      "webhookId": "278d227c-a513-4a53-a284-b3643e5112fd",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "oSsTJBt9uaHVXf3q",
+          "name": "Gmail account 4"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "siddulingampellli460@gmail.com",
+        "subject": "AI financial  Agent Metrics ",
+        "message": "={{ $json.result.text }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -1504,
+        544
+      ],
+      "id": "ef0e77c7-4113-48e7-83f2-66e5e5aa4c67",
+      "name": "Send a message1",
+      "webhookId": "278d227c-a513-4a53-a284-b3643e5112fd",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "oSsTJBt9uaHVXf3q",
+          "name": "Gmail account 4"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Weekly Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Transactions",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch User Profiles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Transactions": {
+      "main": [
+        [
+          {
+            "node": "Group by User & Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Group by User & Filter": {
+      "main": [
+        [
+          {
+            "node": "Merge Profile Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch User Profiles": {
+      "main": [
+        [
+          {
+            "node": "Group by User & Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Profile Data": {
+      "main": [
+        [
+          {
+            "node": "Calculate Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Metrics": {
+      "main": [
+        [
+          {
+            "node": "Message a model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Gemini Response": {
+      "main": [
+        [
+          {
+            "node": "Check Risk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Risk": {
+      "main": [
+        [
+          {
+            "node": "Send Alert (Telegram)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Normal Update (Telegram)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send a message1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Alert (Telegram)": {
+      "main": [
+        []
+      ]
+    },
+    "Send Normal Update (Telegram)": {
+      "main": [
+        []
+      ]
+    },
+    "Message a model": {
+      "main": [
+        [
+          {
+            "node": "Parse Gemini Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "f517cbfc01dfee0fba9a5e7c32541100907b574568d672792ad8568699e76f77"
+  }
+}
